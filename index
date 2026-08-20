@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>イベント受付</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background-color: #f7f9fc; }
+    h2 { color: #333; text-align: center; }
+    #loading { text-align: center; color: #666; margin-top: 50px; }
+    #app { display: none; max-width: 400px; margin: 0 auto; }
+    input[type="text"] { 
+      width: 100%; padding: 12px; font-size: 16px; 
+      border: 2px solid #ccc; border-radius: 8px; box-sizing: border-box;
+    }
+    ul { list-style-type: none; padding: 0; margin-top: 10px; }
+    li { 
+      background: white; padding: 15px; margin-bottom: 5px; 
+      border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 16px; cursor: pointer;
+    }
+    li:active { background-color: #e2e8f0; }
+    .status-alert { color: red; font-size: 12px; font-weight: bold; margin-left: 10px; }
+  </style>
+</head>
+<body>
+
+  <div id="loading">名簿データを読み込み中...<br>少々お待ちください⏳</div>
+
+  <div id="app">
+    <h2>イベント受付</h2>
+    <p style="font-size: 14px; color: #555;">お名前の一部を入力して、表示された候補をタップしてください。</p>
+    
+    <input type="text" id="searchInput" placeholder="例：石月" onkeyup="filterAttendees()">
+    <ul id="suggestions"></ul>
+  </div>
+
+  <script>
+    // ==========================================
+    // 【設定箇所】SheetDBのAPI URLを貼り付けてください
+    // ==========================================
+    const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/h9l37ufrm05y8';
+    // ==========================================
+
+    let attendeesData = [];
+
+    // 画面を開いた時にSheetDBから名簿を読み込む
+    window.onload = async function() {
+      try {
+        const response = await fetch(SHEETDB_API_URL);
+        if (!response.ok) throw new Error('Network error');
+        
+        // JSONデータを取得
+        const data = await response.json();
+        
+        // 実際のCSVの見出しに合わせてデータを整形
+        attendeesData = data.map(row => ({
+          email: row['メールアドレス'], // 更新用のキーとして使用
+          fullName: (row['姓'] || '') + ' ' + (row['名'] || ''),
+          status: row['参加可否'] || ''
+        })).filter(user => user.fullName.trim() !== '');
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+      } catch (error) {
+        document.getElementById('loading').innerHTML = 'データの読み込みに失敗しました。<br>API URLが正しいか確認してください。';
+        console.error('Error fetching data:', error);
+      }
+    };
+
+    // 文字入力でサジェストを絞り込む
+    function filterAttendees() {
+      const input = document.getElementById('searchInput').value.trim();
+      const suggestionsBox = document.getElementById('suggestions');
+      suggestionsBox.innerHTML = ''; 
+      
+      if (input.length === 0) return;
+      
+      const filtered = attendeesData.filter(user => user.fullName.includes(input));
+      
+      filtered.slice(0, 10).forEach(user => {
+        const li = document.createElement('li');
+        li.textContent = user.fullName;
+        
+        if (user.status !== '参加') {
+          const span = document.createElement('span');
+          span.className = 'status-alert';
+          span.textContent = '(不参加予定)';
+          li.appendChild(span);
+        }
+
+        li.onclick = () => selectUser(user);
+        suggestionsBox.appendChild(li);
+      });
+    }
+
+    // 名前を選んでSheetDB（スプレッドシート）を更新する
+    async function selectUser(user) {
+      if(confirm(`「${user.fullName}」さんですね。
+受付を完了しますか？`)) {
+         
+         document.getElementById('app').style.display = 'none';
+         document.getElementById('loading').innerHTML = '受付処理中...';
+         document.getElementById('loading').style.display = 'block';
+
+         // 現在の時刻を取得 (YYYY/MM/DD HH:mm:ss)
+         const now = new Date();
+         const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
+
+         try {
+           // SheetDBの更新API (PATCH)。「メールアドレス」列をキーにして上書きする
+           const updateUrl = `${SHEETDB_API_URL}/メールアドレス/${encodeURIComponent(user.email)}`;
+           
+           const response = await fetch(updateUrl, {
+             method: 'PATCH',
+             headers: {
+               'Accept': 'application/json',
+               'Content-Type': 'application/json'
+             },
+             body: JSON.stringify({
+               data: {
+                 '受付状況': '出席',
+                 '受付時間': timestamp
+               }
+             })
+           });
+
+           if (!response.ok) throw new Error('Update failed');
+
+           // 送信成功
+           alert('受付が完了しました！');
+           
+           document.getElementById('searchInput').value = '';
+           document.getElementById('suggestions').innerHTML = '';
+           document.getElementById('loading').style.display = 'none';
+           document.getElementById('app').style.display = 'block';
+
+         } catch (error) {
+           alert('通信エラーが発生しました。もう一度お試しください。');
+           console.error(error);
+           document.getElementById('loading').style.display = 'none';
+           document.getElementById('app').style.display = 'block';
+         }
+      }
+    }
+  </script>
+</body>
+</html>
