@@ -3,157 +3,231 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>受付ダッシュボード（管理者用）</title>
+  <title>イベント受付</title>
+  <!-- CSV読み込み用のライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; background-color: #f7f9fc; }
     h2 { color: #333; text-align: center; }
-    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .stats { display: flex; justify-content: space-around; margin-bottom: 20px; background: #e3f2fd; padding: 15px; border-radius: 8px; }
-    .stat-box { text-align: center; }
-    .stat-num { font-size: 24px; font-weight: bold; color: #1976d2; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    th { background-color: #f2f2f2; position: sticky; top: 0; }
-    .status-attend { color: green; font-weight: bold; }
-    .status-absent { color: red; font-weight: bold; }
-    .btn-download { display: block; width: 100%; padding: 12px; font-size: 16px; font-weight: bold; background-color: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; }
-    .btn-download:active { background-color: #45a049; }
-    #authSection { text-align: center; margin-top: 50px; }
+    #loading { text-align: center; color: #666; margin-top: 50px; }
+    #app, #setupSection { display: none; max-width: 400px; margin: 0 auto; }
+    input[type="text"] { 
+      width: 100%; padding: 12px; font-size: 16px; 
+      border: 2px solid #ccc; border-radius: 8px; box-sizing: border-box;
+    }
+    ul { list-style-type: none; padding: 0; margin-top: 10px; }
+    li { 
+      background: white; padding: 15px; margin-bottom: 5px; 
+      border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 16px; cursor: pointer;
+    }
+    li:active { background-color: #e2e8f0; }
+    .manual-btn {
+      width: 100%; padding: 12px; font-size: 16px; font-weight: bold;
+      background-color: #4CAF50; color: white; border: none; border-radius: 8px;
+      cursor: pointer; margin-top: 10px;
+    }
+    .manual-btn:active { background-color: #45a049; }
+    .setup-box { background: white; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
 
-  <!-- 簡易パスワード画面 -->
-  <div id="authSection">
-    <h2>管理者ログイン</h2>
-    <p>パスワードを入力してください</p>
-    <input type="password" id="passcode" style="padding: 10px; font-size: 16px;">
-    <button onclick="checkAuth()" style="padding: 10px 20px; font-size: 16px;">ログイン</button>
+  <div id="loading">データベースに接続中...<br>少々お待ちください⏳</div>
+
+  <!-- 初回のみ表示されるセットアップ画面 -->
+  <div id="setupSection">
+    <h2>🛠️ 初期セットアップ</h2>
+    <div class="setup-box">
+      <p style="font-size: 14px; color: #555; text-align: left;">
+        Firebaseデータベースが空です。<br>名簿のCSVファイルを選択して、データベースを初期化してください。
+      </p>
+      <input type="file" id="csvFileInput" accept=".csv" style="margin: 20px 0;">
+      <button class="manual-btn" style="background-color: #2196F3;" onclick="window.handleFileUpload()">データベースを構築する</button>
+    </div>
   </div>
 
-  <div id="adminApp" style="display: none;">
-    <div class="container">
-      <h2>📊 受付ダッシュボード</h2>
-      
-      <div class="stats">
-        <div class="stat-box">総名簿数<br><span id="totalCount" class="stat-num">0</span>人</div>
-        <div class="stat-box">チェックイン済み<br><span id="attendCount" class="stat-num">0</span>人</div>
-      </div>
-
-      <div style="overflow-x: auto; max-height: 500px; overflow-y: scroll;">
-        <table id="attendeeTable">
-          <thead>
-            <tr>
-              <th>名前</th>
-              <th>事前の参加可否</th>
-              <th>受付状況</th>
-              <th>受付時間</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody">
-            <!-- データがここに入ります -->
-          </tbody>
-        </table>
-      </div>
-
-      <button class="btn-download" onclick="downloadCSV()">📥 最新のデータをCSVでダウンロード</button>
+  <!-- 通常の受付画面 -->
+  <div id="app">
+    <h2>イベント受付</h2>
+    <p style="font-size: 14px; color: #555;">お名前の一部を入力して、表示された候補をタップしてください。</p>
+    
+    <input type="text" id="searchInput" placeholder="例：石月" oninput="window.filterAttendees()">
+    <ul id="suggestions"></ul>
+    
+    <div id="manualEntrySection" style="display: none; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 15px;">
+      <p style="font-size: 13px; color: #666; margin-bottom: 10px;">名簿に該当する名前がない場合</p>
+      <button class="manual-btn" onclick="window.registerManual()">入力した名前でそのまま受付</button>
     </div>
   </div>
 
   <script type="module">
+    // Firebaseのモジュールを読み込み
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-    import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
     // ==========================================
-    // 【設定箇所】index.htmlと同じ firebaseConfig を貼り付けてください
+    // 【設定箇所】Firebaseの firebaseConfig を貼り付けてください
     // ==========================================
     const firebaseConfig = {
-    　apiKey: "AIzaSyBGPJjRQK3_-umyt7jxwSfnGwmR1s6kGWo",
-      authDomain: "participants-7b1ab.firebaseapp.com",
-      projectId: "participants-7b1ab",
-      storageBucket: "participants-7b1ab.firebasestorage.app",
-      messagingSenderId: "767062606751",
-      appId: "1:767062606751:web:112db213c77ae089fbf3aa"
+      apiKey: "ここにapiKeyを貼り付けます",
+      authDomain: "ここにauthDomainを貼り付けます",
+      projectId: "ここにprojectIdを貼り付けます",
+      storageBucket: "ここにstorageBucketを貼り付けます",
+      messagingSenderId: "ここにmessagingSenderIdを貼り付けます",
+      appId: "ここにappIdを貼り付けます"
     };
     // ==========================================
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
     let attendeesData = [];
 
-    // 簡易パスワード認証（セキュリティ対策）
-    window.checkAuth = function() {
-      const pass = document.getElementById('passcode').value;
-      if (pass === '2026') { // ★パスワードは自由に変更してください（現在は「2026」）
-        document.getElementById('authSection').style.display = 'none';
-        document.getElementById('adminApp').style.display = 'block';
-        initFirebase();
-      } else {
-        alert('パスワードが違います');
+    // 画面を開いた時にFirebaseから名簿を読み込む
+    window.onload = async function() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "attendees"));
+        
+        // もしデータが空ならセットアップ画面を出す
+        if (querySnapshot.empty) {
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('setupSection').style.display = 'block';
+          return;
+        }
+        
+        // データがある場合はリストに格納
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          attendeesData.push({
+            id: docSnap.id,
+            email: data['メールアドレス'] || '',
+            fullName: (data['姓'] || '') + ' ' + (data['名'] || ''),
+            status: data['参加可否'] || ''
+          });
+        });
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+      } catch (error) {
+        document.getElementById('loading').innerHTML = 'データベースの読み込みに失敗しました。<br>Firebaseの設定を確認してください。';
+        console.error(error);
       }
     };
 
-    function initFirebase() {
-      const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
-
-      // ★爆速ポイント：onSnapshotを使うと、データが更新されるたびに「自動で」画面が書き換わります
-      onSnapshot(collection(db, "attendees"), (snapshot) => {
-        attendeesData = [];
-        let attendCount = 0;
-
-        const tbody = document.getElementById('tableBody');
-        tbody.innerHTML = ''; // テーブルを一旦リセット
-
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          const fullName = (data['姓'] || '') + ' ' + (data['名'] || '');
-          const status = data['参加可否'] || '';
-          const checkIn = data['受付状況'] || '';
-          const checkInTime = data['受付時間'] || '';
-
-          if (checkIn.includes('出席')) attendCount++;
-
-          attendeesData.push({ fullName, status, checkIn, checkInTime, email: data['メールアドレス'] || '' });
-
-          // テーブルに行を追加
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${fullName}</td>
-            <td>${status}</td>
-            <td class="${checkIn.includes('出席') ? 'status-attend' : (status === '不参加' ? 'status-absent' : '')}">${checkIn}</td>
-            <td>${checkInTime}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-        // 人数のカウントを更新
-        document.getElementById('totalCount').textContent = attendeesData.length;
-        document.getElementById('attendCount').textContent = attendCount;
-      });
-    }
-
-    // CSVダウンロード機能
-    window.downloadCSV = function() {
-      let csvContent = "名前,メールアドレス,事前の参加可否,受付状況,受付時間\n";
+    // 【初回セットアップ】CSVを読み込んでFirebaseに一括登録する
+    window.handleFileUpload = function() {
+      const fileInput = document.getElementById('csvFileInput');
+      if (!fileInput.files.length) {
+        alert('CSVファイルを選択してください。');
+        return;
+      }
       
-      attendeesData.forEach(row => {
-        // カンマが含まれる場合に備えてダブルクォーテーションで囲む
-        const formattedRow = `"${row.fullName}","${row.email}","${row.status}","${row.checkIn}","${row.checkInTime}"`;
-        csvContent += formattedRow + "\n";
-      });
-
-      // BOMを付与して文字化けを防ぐ（Excel用）
-      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-      const blob = new Blob([bom, csvContent], { type: "text/csv;charset=utf-8;" });
+      document.getElementById('setupSection').innerHTML = "データベースを構築中...<br>（画面を閉じないでください⏳）";
       
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", "受付結果.csv");
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      Papa.parse(fileInput.files[0], {
+        header: true,
+        complete: async function(results) {
+          try {
+            const promises = [];
+            for (const row of results.data) {
+              if (!row['姓'] && !row['名']) continue; // 空行をスキップ
+              
+              // メールアドレスがあればそれをIDに、なければランダムIDを生成
+              const docId = row['メールアドレス'] ? row['メールアドレス'] : crypto.randomUUID();
+              
+              // Firestoreにデータをセットする準備
+              promises.push(setDoc(doc(db, "attendees", docId), row));
+            }
+            
+            // 一気にFirebaseへ送信
+            await Promise.all(promises);
+            
+            alert('初期セットアップが完了しました！\nページをリロードして受付画面を開きます。');
+            location.reload();
+          } catch (e) {
+            alert('エラーが発生しました。');
+            console.error(e);
+          }
+        }
+      });
     };
+
+    // サジェストの絞り込み
+    window.filterAttendees = function() {
+      const input = document.getElementById('searchInput').value.trim();
+      const suggestionsBox = document.getElementById('suggestions');
+      const manualSection = document.getElementById('manualEntrySection');
+      
+      suggestionsBox.innerHTML = ''; 
+      
+      if (input.length === 0) {
+        manualSection.style.display = 'none';
+        return; 
+      }
+      
+      manualSection.style.display = 'block';
+      
+      const filtered = attendeesData.filter(user => user.fullName.includes(input));
+      
+      filtered.slice(0, 10).forEach(user => {
+        const li = document.createElement('li');
+        li.textContent = user.fullName;
+        li.onclick = () => window.selectUser(user);
+        suggestionsBox.appendChild(li);
+      });
+    };
+
+    // ★爆速化：名簿にある人の受付処理（更新）
+    window.selectUser = function(user) {
+      if(confirm(`「${user.fullName}」さんですね。\n受付を完了しますか？`)) {
+         
+         const now = new Date();
+         const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
+         const checkInResult = (user.status !== '参加') ? '出席(不参加予定)' : '出席';
+
+         // 裏側で通信を開始する（待たない）
+         updateDoc(doc(db, "attendees", user.id), {
+           '受付状況': checkInResult,
+           '受付時間': timestamp
+         }).catch(error => console.error('通信エラー:', error));
+
+         alert('受付が完了しました！');
+         resetUI();
+      }
+    };
+
+    // ★爆速化：名簿にない人の新規受付処理（追加）
+    window.registerManual = function() {
+      const inputName = document.getElementById('searchInput').value.trim();
+      
+      if(confirm(`名簿に該当がありません。\n「${inputName}」さんとして受付を完了しますか？`)) {
+         
+         const now = new Date();
+         const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
+         
+         const newDocId = crypto.randomUUID(); // ランダムなIDを生成
+
+         // 裏側で通信を開始する（待たない）
+         setDoc(doc(db, "attendees", newDocId), {
+           '姓': inputName,
+           '受付状況': '出席(名簿情報なし)',
+           '受付時間': timestamp
+         }).catch(error => console.error('通信エラー:', error));
+
+         alert('受付が完了しました！');
+         resetUI();
+      }
+    };
+
+    function resetUI() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('suggestions').innerHTML = '';
+      document.getElementById('manualEntrySection').style.display = 'none';
+      document.getElementById('searchInput').focus();
+    }
   </script>
 </body>
 </html>
+
+
