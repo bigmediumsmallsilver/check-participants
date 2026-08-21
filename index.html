@@ -20,7 +20,12 @@
       font-size: 16px; cursor: pointer;
     }
     li:active { background-color: #e2e8f0; }
-    .status-alert { color: red; font-size: 12px; font-weight: bold; margin-left: 10px; }
+    .manual-btn {
+      width: 100%; padding: 12px; font-size: 16px; font-weight: bold;
+      background-color: #4CAF50; color: white; border: none; border-radius: 8px;
+      cursor: pointer; margin-top: 10px;
+    }
+    .manual-btn:active { background-color: #45a049; }
   </style>
 </head>
 <body>
@@ -29,10 +34,16 @@
 
   <div id="app">
     <h2>イベント受付</h2>
-    <p style="font-size: 14px; color: #555;">お名前の一部を入力して、表示された候補をタップしてください。</p>
+    <p style="font-size: 14px; color: #555;">お名前を入力してください。</p>
     
     <input type="text" id="searchInput" placeholder="お名前" oninput="filterAttendees()">
     <ul id="suggestions"></ul>
+    
+    <!-- 名簿にない人用のボタン（文字が入力されると表示） -->
+    <div id="manualEntrySection" style="display: none; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 15px;">
+      <p style="font-size: 13px; color: #666; margin-bottom: 10px;">名簿に該当する名前がない場合</p>
+      <button class="manual-btn" onclick="registerManual()">入力した名前でそのまま受付</button>
+    </div>
   </div>
 
   <script>
@@ -68,9 +79,17 @@
     function filterAttendees() {
       const input = document.getElementById('searchInput').value.trim();
       const suggestionsBox = document.getElementById('suggestions');
+      const manualSection = document.getElementById('manualEntrySection');
+      
       suggestionsBox.innerHTML = ''; 
       
-      if (input.length === 0) return; 
+      if (input.length === 0) {
+        manualSection.style.display = 'none';
+        return; 
+      }
+      
+      // 文字が入力されたら「名簿にない場合」ボタンを表示
+      manualSection.style.display = 'block';
       
       const filtered = attendeesData.filter(user => user.fullName.includes(input));
       
@@ -78,20 +97,17 @@
         const li = document.createElement('li');
         li.textContent = user.fullName;
         
-        if (user.status !== '参加') {
-          const span = document.createElement('span');
-          span.className = 'status-alert';
-          span.textContent = '';
-          li.appendChild(span);
-        }
+        // ★不参加の人でも画面上の見た目は一緒に（「不参加予定」の赤文字を削除）
 
         li.onclick = () => selectUser(user);
         suggestionsBox.appendChild(li);
       });
     }
 
+    // 名簿にある人の受付処理（PATCH）
     async function selectUser(user) {
-      if(confirm(`「${user.fullName}」さんですね。\n受付を完了しますか？`)) {
+      if(confirm(`「${user.fullName}」さんですね。
+受付を完了しますか？`)) {
          
          document.getElementById('app').style.display = 'none';
          document.getElementById('loading').innerHTML = '受付処理中...';
@@ -100,7 +116,7 @@
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
 
-         const checkInResult = (user.status !== '参加') ? '出席' : '出席';
+         const checkInResult = (user.status !== '参加') ? '出席(不参加予定)' : '出席';
 
          try {
            const updateUrl = `${SHEETDB_API_URL}/メールアドレス/${encodeURIComponent(user.email)}`;
@@ -121,19 +137,67 @@
 
            if (!response.ok) throw new Error('Update failed');
 
-           if (user.status !== '参加') {
-             alert('受付が完了しました。\n※事前の回答が「不参加」となっていた方です。');
-           } else {
-             alert('受付が完了しました！');
-           }
+           // ★不参加だった場合でも、画面に出るアラートは通常と同じにする
+           alert('受付が完了しました！');
            
            document.getElementById('searchInput').value = '';
            document.getElementById('suggestions').innerHTML = '';
+           document.getElementById('manualEntrySection').style.display = 'none';
            document.getElementById('loading').style.display = 'none';
            document.getElementById('app').style.display = 'block';
 
          } catch (error) {
            alert('通信エラーが発生しました。もう一度お試しください。');
+           console.error(error);
+           document.getElementById('loading').style.display = 'none';
+           document.getElementById('app').style.display = 'block';
+         }
+      }
+    }
+
+    // 名簿にない人の新規受付処理（POST）
+    async function registerManual() {
+      const inputName = document.getElementById('searchInput').value.trim();
+      
+      if(confirm(`名簿に該当がありません。
+「${inputName}」さんとして受付を完了しますか？`)) {
+         
+         document.getElementById('app').style.display = 'none';
+         document.getElementById('loading').innerHTML = '受付処理中...';
+         document.getElementById('loading').style.display = 'block';
+
+         const now = new Date();
+         const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
+
+         try {
+           // 新規追加は POST メソッドを使います
+           const response = await fetch(SHEETDB_API_URL, {
+             method: 'POST',
+             headers: {
+               'Accept': 'application/json',
+               'Content-Type': 'application/json'
+             },
+             body: JSON.stringify({
+               data: {
+                 '姓': inputName,  // 便宜上、姓の列にフルネームを入れます
+                 '受付状況': '出席(名簿情報なし)',
+                 '受付時間': timestamp
+               }
+             })
+           });
+
+           if (!response.ok) throw new Error('Update failed');
+
+           alert('受付が完了しました！');
+           
+           document.getElementById('searchInput').value = '';
+           document.getElementById('suggestions').innerHTML = '';
+           document.getElementById('manualEntrySection').style.display = 'none';
+           document.getElementById('loading').style.display = 'none';
+           document.getElementById('app').style.display = 'block';
+
+         } catch (error) {
+           alert('通信エラーが発生しました。SheetDBの設定でPOSTが許可されているか確認してください。');
            console.error(error);
            document.getElementById('loading').style.display = 'none';
            document.getElementById('app').style.display = 'block';
