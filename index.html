@@ -100,7 +100,7 @@
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
 
-         const checkInResult = (user.status !== '参加') ? '出席(不参加予定)' : '出席';
+         const checkInResult = (user.status !== '参加') ? '出席' : '出席';
 
          try {
            const updateUrl = `${SHEETDB_API_URL}/メールアドレス/${encodeURIComponent(user.email)}`;
