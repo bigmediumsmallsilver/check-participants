@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>計和会受付</title>
+  <title>イベント受付</title>
+  <!-- CSV読み込み用のライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; background-color: #f7f9fc; }
     h2 { color: #333; text-align: center; }
     #loading { text-align: center; color: #666; margin-top: 50px; }
-    #app { display: none; max-width: 400px; margin: 0 auto; }
+    #app, #setupSection { display: none; max-width: 400px; margin: 0 auto; }
     input[type="text"] { 
       width: 100%; padding: 12px; font-size: 16px; 
       border: 2px solid #ccc; border-radius: 8px; box-sizing: border-box;
@@ -26,57 +28,133 @@
       cursor: pointer; margin-top: 10px;
     }
     .manual-btn:active { background-color: #45a049; }
+    .setup-box { background: white; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
 
-  <div id="loading">読み込み中...<br>少々お待ちください⏳</div>
+  <div id="loading">接続中...<br>少々お待ちください⏳</div>
 
-  <div id="app">
-    <h2>計和会受付</h2>
-    <p style="font-size: 14px; color: #555;">お名前を入力してください。</p>
-    
-    <input type="text" id="searchInput" placeholder="お名前" oninput="filterAttendees()">
-    <ul id="suggestions"></ul>
-    
-    <!-- 名簿にない人用のボタン（文字が入力されると表示） -->
-    <div id="manualEntrySection" style="display: none; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 15px;">
-      <p style="font-size: 13px; color: #666; margin-bottom: 10px;"></p>
-      <button class="manual-btn" onclick="registerManual()">受付</button>
+  <!-- 初回のみ表示されるセットアップ画面 -->
+  <div id="setupSection">
+    <h2>🛠️ 初期セットアップ</h2>
+    <div class="setup-box">
+      <p style="font-size: 14px; color: #555; text-align: left;">
+        Firebaseデータベースが空です。<br>名簿のCSVファイルを選択して、データベースを初期化してください。
+      </p>
+      <input type="file" id="csvFileInput" accept=".csv" style="margin: 20px 0;">
+      <button class="manual-btn" style="background-color: #2196F3;" onclick="window.handleFileUpload()">データベースを構築する</button>
     </div>
   </div>
 
-  <script>
+  <!-- 通常の受付画面 -->
+  <div id="app">
+    <h2>イベント受付</h2>
+    <p style="font-size: 14px; color: #555;">お名前を入力してください。</p>
+    
+    <input type="text" id="searchInput" placeholder="お名前" oninput="window.filterAttendees()">
+    <ul id="suggestions"></ul>
+    
+    <div id="manualEntrySection" style="display: none; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 15px;">
+      <p style="font-size: 13px; color: #666; margin-bottom: 10px;"></p>
+      <button class="manual-btn" onclick="window.registerManual()">受付</button>
+    </div>
+  </div>
+
+  <script type="module">
+    // Firebaseのモジュールを読み込み
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
     // ==========================================
-    // 【設定箇所】SheetDBのAPI URLを貼り付けてください
+    // 【設定箇所】Firebaseの firebaseConfig を貼り付けてください
     // ==========================================
-    const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/h9l37ufrm05y8';
+    const firebaseConfig = {
+      apiKey: "AIzaSyBGPJjRQK3_-umyt7jxwSfnGwmR1s6kGWo",
+      authDomain: "participants-7b1ab.firebaseapp.com",
+      projectId: "participants-7b1ab",
+      storageBucket: "participants-7b1ab.firebasestorage.app",
+      messagingSenderId: "767062606751",
+      appId: "1:767062606751:web:112db213c77ae089fbf3aa"
+    };
     // ==========================================
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
     let attendeesData = [];
 
+    // 画面を開いた時にFirebaseから名簿を読み込む
     window.onload = async function() {
       try {
-        const response = await fetch(SHEETDB_API_URL);
-        if (!response.ok) throw new Error('Network error');
+        const querySnapshot = await getDocs(collection(db, "attendees"));
         
-        const data = await response.json();
+        // もしデータが空ならセットアップ画面を出す
+        if (querySnapshot.empty) {
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('setupSection').style.display = 'block';
+          return;
+        }
         
-        attendeesData = data.map(row => ({
-          email: row['メールアドレス'],
-          fullName: (row['姓'] || '') + ' ' + (row['名'] || ''),
-          status: row['参加可否'] || ''
-        })).filter(user => user.fullName.trim() !== '');
+        // データがある場合はリストに格納
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          attendeesData.push({
+            id: docSnap.id,
+            email: data['メールアドレス'] || '',
+            fullName: (data['姓'] || '') + ' ' + (data['名'] || ''),
+            status: data['参加可否'] || ''
+          });
+        });
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('app').style.display = 'block';
       } catch (error) {
-        document.getElementById('loading').innerHTML = 'データの読み込みに失敗しました。<br>API URLが正しいか確認してください。';
-        console.error('Error fetching data:', error);
+        document.getElementById('loading').innerHTML = 'データベースの読み込みに失敗しました。<br>Firebaseの設定を確認してください。';
+        console.error(error);
       }
     };
 
-    function filterAttendees() {
+    // 【初回セットアップ】CSVを読み込んでFirebaseに一括登録する
+    window.handleFileUpload = function() {
+      const fileInput = document.getElementById('csvFileInput');
+      if (!fileInput.files.length) {
+        alert('CSVファイルを選択してください。');
+        return;
+      }
+      
+      document.getElementById('setupSection').innerHTML = "データベースを構築中...<br>（画面を閉じないでください⏳）";
+      
+      Papa.parse(fileInput.files[0], {
+        header: true,
+        complete: async function(results) {
+          try {
+            const promises = [];
+            for (const row of results.data) {
+              if (!row['姓'] && !row['名']) continue; // 空行をスキップ
+              
+              // メールアドレスがあればそれをIDに、なければランダムIDを生成
+              const docId = row['メールアドレス'] ? row['メールアドレス'] : crypto.randomUUID();
+              
+              // Firestoreにデータをセットする準備
+              promises.push(setDoc(doc(db, "attendees", docId), row));
+            }
+            
+            // 一気にFirebaseへ送信
+            await Promise.all(promises);
+            
+            alert('初期セットアップが完了しました！\nページをリロードして受付画面を開きます。');
+            location.reload();
+          } catch (e) {
+            alert('エラーが発生しました。');
+            console.error(e);
+          }
+        }
+      });
+    };
+
+    // サジェストの絞り込み
+    window.filterAttendees = function() {
       const input = document.getElementById('searchInput').value.trim();
       const suggestionsBox = document.getElementById('suggestions');
       const manualSection = document.getElementById('manualEntrySection');
@@ -88,7 +166,6 @@
         return; 
       }
       
-      // 文字が入力されたら「名簿にない場合」ボタンを表示
       manualSection.style.display = 'block';
       
       const filtered = attendeesData.filter(user => user.fullName.includes(input));
@@ -96,112 +173,58 @@
       filtered.slice(0, 10).forEach(user => {
         const li = document.createElement('li');
         li.textContent = user.fullName;
-        
-        // ★不参加の人でも画面上の見た目は一緒に（「不参加予定」の赤文字を削除）
-
-        li.onclick = () => selectUser(user);
+        li.onclick = () => window.selectUser(user);
         suggestionsBox.appendChild(li);
       });
-    }
+    };
 
-    // 名簿にある人の受付処理（PATCH）
-    async function selectUser(user) {
-      if(confirm(`「${user.fullName}」さんですね。
-受付を完了しますか？`)) {
+    // ★爆速化：名簿にある人の受付処理（更新）
+    window.selectUser = function(user) {
+      if(confirm(`「${user.fullName}」さんですね。\n受付を完了しますか？`)) {
          
-         document.getElementById('app').style.display = 'none';
-         document.getElementById('loading').innerHTML = '受付処理中...';
-         document.getElementById('loading').style.display = 'block';
-
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
-
          const checkInResult = (user.status !== '参加') ? '出席(不参加予定)' : '出席';
 
-         try {
-           const updateUrl = `${SHEETDB_API_URL}/メールアドレス/${encodeURIComponent(user.email)}`;
-           
-           const response = await fetch(updateUrl, {
-             method: 'PATCH',
-             headers: {
-               'Accept': 'application/json',
-               'Content-Type': 'application/json'
-             },
-             body: JSON.stringify({
-               data: {
-                 '受付状況': checkInResult,
-                 '受付時間': timestamp
-               }
-             })
-           });
+         // 裏側で通信を開始する（待たない）
+         updateDoc(doc(db, "attendees", user.id), {
+           '受付状況': checkInResult,
+           '受付時間': timestamp
+         }).catch(error => console.error('通信エラー:', error));
 
-           if (!response.ok) throw new Error('Update failed');
-
-           // ★不参加だった場合でも、画面に出るアラートは通常と同じにする
-           alert('受付が完了しました！');
-           
-           document.getElementById('searchInput').value = '';
-           document.getElementById('suggestions').innerHTML = '';
-           document.getElementById('manualEntrySection').style.display = 'none';
-           document.getElementById('loading').style.display = 'none';
-           document.getElementById('app').style.display = 'block';
-
-         } catch (error) {
-           alert('通信エラーが発生しました。もう一度お試しください。');
-           console.error(error);
-           document.getElementById('loading').style.display = 'none';
-           document.getElementById('app').style.display = 'block';
-         }
+         alert('受付が完了しました！');
+         resetUI();
       }
-    }
+    };
 
-    // 名簿にない人の新規受付処理（POST）
-    async function registerManual() {
+    // ★爆速化：名簿にない人の新規受付処理（追加）
+    window.registerManual = function() {
       const inputName = document.getElementById('searchInput').value.trim();
       
-      if(confirm(`「${inputName}」さんとして受付を完了しますか？`)) {
+      if(confirm(`名簿に該当がありません。\n「${inputName}」さんとして受付を完了しますか？`)) {
          
-         document.getElementById('app').style.display = 'none';
-         document.getElementById('loading').innerHTML = '受付処理中...';
-         document.getElementById('loading').style.display = 'block';
-
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
+         
+         const newDocId = crypto.randomUUID(); // ランダムなIDを生成
 
-         try {
-           // 新規追加は POST メソッドを使います
-           const response = await fetch(SHEETDB_API_URL, {
-             method: 'POST',
-             headers: {
-               'Accept': 'application/json',
-               'Content-Type': 'application/json'
-             },
-             body: JSON.stringify({
-               data: {
-                 '姓': inputName,  // 便宜上、姓の列にフルネームを入れます
-                 '受付状況': '出席(名簿情報なし)',
-                 '受付時間': timestamp
-               }
-             })
-           });
+         // 裏側で通信を開始する（待たない）
+         setDoc(doc(db, "attendees", newDocId), {
+           '姓': inputName,
+           '受付状況': '出席(名簿情報なし)',
+           '受付時間': timestamp
+         }).catch(error => console.error('通信エラー:', error));
 
-           if (!response.ok) throw new Error('Update failed');
-
-           alert('受付が完了しました！');
-           
-           document.getElementById('searchInput').value = '';
-           document.getElementById('suggestions').innerHTML = '';
-           document.getElementById('manualEntrySection').style.display = 'none';
-           document.getElementById('loading').style.display = 'none';
-           document.getElementById('app').style.display = 'block';
-
-         } catch (error) {
-           alert('通信エラーが発生しました。SheetDBの設定でPOSTが許可されているか確認してください。');
-           console.error(error);
-           document.getElementById('loading').style.display = 'none';
-           document.getElementById('app').style.display = 'block';
-         }
+         alert('受付が完了しました！');
+         resetUI();
       }
+    };
+
+    function resetUI() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('suggestions').innerHTML = '';
+      document.getElementById('manualEntrySection').style.display = 'none';
+      document.getElementById('searchInput').focus();
     }
   </script>
 </body>
