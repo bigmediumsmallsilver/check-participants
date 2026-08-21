@@ -31,7 +31,7 @@
     <h2>イベント受付</h2>
     <p style="font-size: 14px; color: #555;">お名前の一部を入力して、表示された候補をタップしてください。</p>
     
-    <input type="text" id="searchInput" placeholder="名前" oninput="filterAttendees()">
+    <input type="text" id="searchInput" placeholder="例：石月" oninput="filterAttendees()">
     <ul id="suggestions"></ul>
   </div>
 
@@ -44,18 +44,15 @@
 
     let attendeesData = [];
 
-    // 画面を開いた時にSheetDBから名簿を読み込む
     window.onload = async function() {
       try {
         const response = await fetch(SHEETDB_API_URL);
         if (!response.ok) throw new Error('Network error');
         
-        // JSONデータを取得
         const data = await response.json();
         
-        // 実際のCSVの見出しに合わせてデータを整形
         attendeesData = data.map(row => ({
-          email: row['メールアドレス'], // 更新用のキーとして使用
+          email: row['メールアドレス'],
           fullName: (row['姓'] || '') + ' ' + (row['名'] || ''),
           status: row['参加可否'] || ''
         })).filter(user => user.fullName.trim() !== '');
@@ -68,13 +65,12 @@
       }
     };
 
-    // 文字入力でサジェストを絞り込む
     function filterAttendees() {
       const input = document.getElementById('searchInput').value.trim();
       const suggestionsBox = document.getElementById('suggestions');
       suggestionsBox.innerHTML = ''; 
       
-      if (input.length === 0) return;
+      if (input.length === 0) return; 
       
       const filtered = attendeesData.filter(user => user.fullName.includes(input));
       
@@ -94,21 +90,19 @@
       });
     }
 
-    // 名前を選んでSheetDB（スプレッドシート）を更新する
     async function selectUser(user) {
-      if(confirm(`「${user.fullName}」さんですね。
-受付を完了しますか？`)) {
+      if(confirm(`「${user.fullName}」さんですね。\n受付を完了しますか？`)) {
          
          document.getElementById('app').style.display = 'none';
          document.getElementById('loading').innerHTML = '受付処理中...';
          document.getElementById('loading').style.display = 'block';
 
-         // 現在の時刻を取得 (YYYY/MM/DD HH:mm:ss)
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
 
+         const checkInResult = (user.status !== '参加') ? '出席(不参加予定)' : '出席';
+
          try {
-           // SheetDBの更新API (PATCH)。「メールアドレス」列をキーにして上書きする
            const updateUrl = `${SHEETDB_API_URL}/メールアドレス/${encodeURIComponent(user.email)}`;
            
            const response = await fetch(updateUrl, {
@@ -119,7 +113,7 @@
              },
              body: JSON.stringify({
                data: {
-                 '受付状況': '出席',
+                 '受付状況': checkInResult,
                  '受付時間': timestamp
                }
              })
@@ -127,8 +121,11 @@
 
            if (!response.ok) throw new Error('Update failed');
 
-           // 送信成功
-           alert('受付が完了しました！');
+           if (user.status !== '参加') {
+             alert('受付が完了しました。\n※事前の回答が「不参加」となっていた方です。');
+           } else {
+             alert('受付が完了しました！');
+           }
            
            document.getElementById('searchInput').value = '';
            document.getElementById('suggestions').innerHTML = '';
