@@ -159,8 +159,7 @@
     async function registerManual() {
       const inputName = document.getElementById('searchInput').value.trim();
       
-      if(confirm(`名簿に該当がありません。
-「${inputName}」さんとして受付を完了しますか？`)) {
+      if(confirm(`「${inputName}」さんとして受付を完了しますか？`)) {
          
          document.getElementById('app').style.display = 'none';
          document.getElementById('loading').innerHTML = '受付処理中...';
