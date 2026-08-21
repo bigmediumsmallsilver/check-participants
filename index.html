@@ -4,13 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>イベント受付</title>
-  <!-- CSV読み込み用のライブラリ -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; background-color: #f7f9fc; }
     h2 { color: #333; text-align: center; }
     #loading { text-align: center; color: #666; margin-top: 50px; }
-    #app, #setupSection { display: none; max-width: 400px; margin: 0 auto; }
+    #app { display: none; max-width: 400px; margin: 0 auto; }
     input[type="text"] { 
       width: 100%; padding: 12px; font-size: 16px; 
       border: 2px solid #ccc; border-radius: 8px; box-sizing: border-box;
@@ -28,26 +26,13 @@
       cursor: pointer; margin-top: 10px;
     }
     .manual-btn:active { background-color: #45a049; }
-    .setup-box { background: white; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
 
   <div id="loading">データベースに接続中...<br>少々お待ちください⏳</div>
 
-  <!-- 初回のみ表示されるセットアップ画面 -->
-  <div id="setupSection">
-    <h2>🛠️ 初期セットアップ</h2>
-    <div class="setup-box">
-      <p style="font-size: 14px; color: #555; text-align: left;">
-        Firebaseデータベースが空です。<br>名簿のCSVファイルを選択して、データベースを初期化してください。
-      </p>
-      <input type="file" id="csvFileInput" accept=".csv" style="margin: 20px 0;">
-      <button class="manual-btn" style="background-color: #2196F3;" onclick="window.handleFileUpload()">データベースを構築する</button>
-    </div>
-  </div>
-
-  <!-- 通常の受付画面 -->
+  <!-- 通常の受付画面のみ（セットアップ機能は削除） -->
   <div id="app">
     <h2>イベント受付</h2>
     <p style="font-size: 14px; color: #555;">お名前の一部を入力して、表示された候補をタップしてください。</p>
@@ -62,7 +47,6 @@
   </div>
 
   <script type="module">
-    // Firebaseのモジュールを読み込み
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
     import { getFirestore, collection, getDocs, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -70,33 +54,28 @@
     // 【設定箇所】Firebaseの firebaseConfig を貼り付けてください
     // ==========================================
     const firebaseConfig = {
-      apiKey: "AIzaSyBGPJjRQK3_-umyt7jxwSfnGwmR1s6kGWo",
-      authDomain: "participants-7b1ab.firebaseapp.com",
-      projectId: "participants-7b1ab",
-      storageBucket: "participants-7b1ab.firebasestorage.app",
-      messagingSenderId: "767062606751",
-      appId: "1:767062606751:web:112db213c77ae089fbf3aa""
+      apiKey: "ここにapiKeyを貼り付けます",
+      authDomain: "ここにauthDomainを貼り付けます",
+      projectId: "ここにprojectIdを貼り付けます",
+      storageBucket: "ここにstorageBucketを貼り付けます",
+      messagingSenderId: "ここにmessagingSenderIdを貼り付けます",
+      appId: "ここにappIdを貼り付けます"
     };
     // ==========================================
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-
     let attendeesData = [];
 
-    // 画面を開いた時にFirebaseから名簿を読み込む
     window.onload = async function() {
       try {
         const querySnapshot = await getDocs(collection(db, "attendees"));
         
-        // もしデータが空ならセットアップ画面を出す
         if (querySnapshot.empty) {
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('setupSection').style.display = 'block';
+          document.getElementById('loading').innerHTML = '受付開始前です。<br>管理者の準備をお待ちください。';
           return;
         }
         
-        // データがある場合はリストに格納
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
           attendeesData.push({
@@ -110,50 +89,11 @@
         document.getElementById('loading').style.display = 'none';
         document.getElementById('app').style.display = 'block';
       } catch (error) {
-        document.getElementById('loading').innerHTML = 'データベースの読み込みに失敗しました。<br>Firebaseの設定を確認してください。';
+        document.getElementById('loading').innerHTML = '通信エラーが発生しました。<br>画面を再読み込みしてください。';
         console.error(error);
       }
     };
 
-    // 【初回セットアップ】CSVを読み込んでFirebaseに一括登録する
-    window.handleFileUpload = function() {
-      const fileInput = document.getElementById('csvFileInput');
-      if (!fileInput.files.length) {
-        alert('CSVファイルを選択してください。');
-        return;
-      }
-      
-      document.getElementById('setupSection').innerHTML = "データベースを構築中...<br>（画面を閉じないでください⏳）";
-      
-      Papa.parse(fileInput.files[0], {
-        header: true,
-        complete: async function(results) {
-          try {
-            const promises = [];
-            for (const row of results.data) {
-              if (!row['姓'] && !row['名']) continue; // 空行をスキップ
-              
-              // メールアドレスがあればそれをIDに、なければランダムIDを生成
-              const docId = row['メールアドレス'] ? row['メールアドレス'] : crypto.randomUUID();
-              
-              // Firestoreにデータをセットする準備
-              promises.push(setDoc(doc(db, "attendees", docId), row));
-            }
-            
-            // 一気にFirebaseへ送信
-            await Promise.all(promises);
-            
-            alert('初期セットアップが完了しました！\nページをリロードして受付画面を開きます。');
-            location.reload();
-          } catch (e) {
-            alert('エラーが発生しました。');
-            console.error(e);
-          }
-        }
-      });
-    };
-
-    // サジェストの絞り込み
     window.filterAttendees = function() {
       const input = document.getElementById('searchInput').value.trim();
       const suggestionsBox = document.getElementById('suggestions');
@@ -178,15 +118,13 @@
       });
     };
 
-    // ★爆速化：名簿にある人の受付処理（更新）
     window.selectUser = function(user) {
-      if(confirm(`「${user.fullName}」さんですね。\n受付を完了しますか？`)) {
-         
+      if(confirm(`「${user.fullName}」さんですね。
+受付を完了しますか？`)) {
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
          const checkInResult = (user.status !== '参加') ? '出席(不参加予定)' : '出席';
 
-         // 裏側で通信を開始する（待たない）
          updateDoc(doc(db, "attendees", user.id), {
            '受付状況': checkInResult,
            '受付時間': timestamp
@@ -197,18 +135,14 @@
       }
     };
 
-    // ★爆速化：名簿にない人の新規受付処理（追加）
     window.registerManual = function() {
       const inputName = document.getElementById('searchInput').value.trim();
-      
-      if(confirm(`名簿に該当がありません。\n「${inputName}」さんとして受付を完了しますか？`)) {
-         
+      if(confirm(`名簿に該当がありません。
+「${inputName}」さんとして受付を完了しますか？`)) {
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
-         
-         const newDocId = crypto.randomUUID(); // ランダムなIDを生成
+         const newDocId = crypto.randomUUID(); 
 
-         // 裏側で通信を開始する（待たない）
          setDoc(doc(db, "attendees", newDocId), {
            '姓': inputName,
            '受付状況': '出席(名簿情報なし)',
