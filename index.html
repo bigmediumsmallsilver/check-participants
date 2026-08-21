@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>イベント受付</title>
+  <title>計和会受付</title>
   <style>
     body { font-family: sans-serif; padding: 20px; background-color: #f7f9fc; }
     h2 { color: #333; text-align: center; }
@@ -30,19 +30,19 @@
 </head>
 <body>
 
-  <div id="loading">データベースに接続中...<br>少々お待ちください⏳</div>
+  <div id="loading">接続中...<br>少々お待ちください⏳</div>
 
   <!-- 通常の受付画面のみ（セットアップ機能は削除） -->
   <div id="app">
     <h2>イベント受付</h2>
-    <p style="font-size: 14px; color: #555;">お名前の一部を入力して、表示された候補をタップしてください。</p>
+    <p style="font-size: 14px; color: #555;">お名前を入力してください。</p>
     
-    <input type="text" id="searchInput" placeholder="例：石月" oninput="window.filterAttendees()">
+    <input type="text" id="searchInput" placeholder="お名前" oninput="window.filterAttendees()">
     <ul id="suggestions"></ul>
     
     <div id="manualEntrySection" style="display: none; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 15px;">
-      <p style="font-size: 13px; color: #666; margin-bottom: 10px;">名簿に該当する名前がない場合</p>
-      <button class="manual-btn" onclick="window.registerManual()">入力した名前でそのまま受付</button>
+      <p style="font-size: 13px; color: #666; margin-bottom: 10px;"></p>
+      <button class="manual-btn" onclick="window.registerManual()">受付</button>
     </div>
   </div>
 
@@ -137,7 +137,7 @@
 
     window.registerManual = function() {
       const inputName = document.getElementById('searchInput').value.trim();
-      if(confirm(`名簿に該当がありません。
+      if(confirm(`
 「${inputName}」さんとして受付を完了しますか？`)) {
          const now = new Date();
          const timestamp = now.getFullYear() + '/' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + now.getHours() + ':' + ('0' + now.getMinutes()).slice(-2);
